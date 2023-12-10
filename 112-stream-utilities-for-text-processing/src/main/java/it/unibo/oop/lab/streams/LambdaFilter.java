@@ -6,6 +6,11 @@ import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.awt.LayoutManager;
 import java.awt.Toolkit;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 import javax.swing.BorderFactory;
@@ -38,7 +43,31 @@ public final class LambdaFilter extends JFrame {
         /**
          * Commands.
          */
-        IDENTITY("No modifications", Function.identity());
+        IDENTITY("No modifications", Function.identity()),
+        LOWERCASE("To lowercase", /* new Function<String, String>() {
+            public String apply(String in) {
+                return in.toLowerCase();
+            }
+        } */ (s -> s.toLowerCase())),
+        COUNTCHAR("Count characters", ((String s) -> String.valueOf(s.length()))),
+        COUNTLINES("Count lines", ((String s) -> String.valueOf(s.lines().count()))),
+        ORDERED("Order alphabetically", new Function<String, String>() {
+            public String apply(String in) {
+                List<String> order = new ArrayList<>();
+                for (String w: in.split(" ")){
+                    order.add(w);
+                }
+                Collections.sort(order);
+                return order.toString();
+                }
+            }),
+        COUNTWORD("Write count per word", ((String s) -> {
+            Map<String, Integer> out = new LinkedHashMap<>();
+            for (String word: s.split(" ")) {
+                out.put(word, word.length());
+            }
+            return out.toString();
+        }));
 
         private final String commandName;
         private final Function<String, String> fun;

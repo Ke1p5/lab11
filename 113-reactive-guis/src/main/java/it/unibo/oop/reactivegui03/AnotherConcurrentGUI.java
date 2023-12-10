@@ -2,10 +2,10 @@ package it.unibo.oop.reactivegui03;
 
 import java.awt.Dimension;
 import java.awt.Toolkit;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
+//import java.awt.event.ActionEvent;
+//import java.awt.event.ActionListener;
 import java.lang.reflect.InvocationTargetException;
-import java.util.concurrent.TimeUnit;
+//import java.util.concurrent.TimeUnit;
 
 import javax.swing.JButton;
 import javax.swing.JFrame;
@@ -18,4 +18,158 @@ import javax.swing.SwingUtilities;
  */
 @SuppressWarnings("PMD.AvoidPrintStackTrace")
 public final class AnotherConcurrentGUI extends JFrame {
+    private static final long serialVersionUID = 1L;
+    private static final double WIDTH_PERC = 0.2;
+    private static final double HEIGHT_PERC = 0.1;
+    private static final double TIME_LIMIT = 10_000;
+    private final JLabel display = new JLabel();
+    private final JButton stop = new JButton("stop");
+    private final JButton up = new JButton("up");
+    private final JButton down = new JButton("down");
+
+
+    /**
+     * Builds a new CGUI.
+     */
+    public AnotherConcurrentGUI() {
+        super();
+        final Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        this.setSize((int) (screenSize.getWidth() * WIDTH_PERC), (int) (screenSize.getHeight() * HEIGHT_PERC));
+        this.setDefaultCloseOperation(EXIT_ON_CLOSE);
+        final JPanel panel = new JPanel();
+        panel.add(display);
+        panel.add(up);
+        panel.add(down);
+        panel.add(stop);
+        this.getContentPane().add(panel);
+        this.setVisible(true);
+        /*
+         * Create the counter agent and start it. This is actually not so good:
+         * thread management should be left to
+         * java.util.concurrent.ExecutorService
+         */
+
+        final Synchronizer sync = new Synchronizer();
+        
+        final Agent agent = new Agent(sync);
+        final StopAgent halt = new StopAgent(sync);
+        new Thread(agent).start();
+        new Thread(halt).start();
+        /*
+         * Register a listener that stops it
+         */
+        stop.addActionListener((e) -> {
+            agent.stopCounting();
+            stop.setEnabled(false);
+            up.setEnabled(false);
+            down.setEnabled(false);
+        });
+        up.addActionListener((e) -> agent.reverseCounting(true));
+        down.addActionListener((e) -> agent.reverseCounting(false));
+    }
+
+    /*
+     * The counter agent is implemented as a nested class. This makes it
+     * invisible outside and encapsulated.
+     */
+    private class Agent implements Runnable {
+        /*
+         * Stop is volatile to ensure visibility. Look at:
+         * 
+         * http://archive.is/9PU5N - Sections 17.3 and 17.4
+         * 
+         * For more details on how to use volatile:
+         * 
+         * http://archive.is/4lsKW
+         * 
+         */
+        private volatile boolean stop;
+        private int counter;
+        private boolean ascending = true;
+        private volatile long watch;
+        private Synchronizer sync;
+
+        public Agent(Synchronizer sync) {
+            this.sync = sync;
+            this.watch = System.currentTimeMillis();
+        }
+
+        @Override
+        public void run() {
+            while (!this.stop) {
+                try {
+                    // The EDT doesn't access `counter` anymore, it doesn't need to be volatile 
+                    final var nextText = Integer.toString(this.counter);
+                    SwingUtilities.invokeAndWait(() -> AnotherConcurrentGUI.this.display.setText(nextText));
+                    if (ascending) {
+                        this.counter++;
+                    } else this.counter--;
+                    Thread.sleep(100);
+                    if (System.currentTimeMillis() - watch >= TIME_LIMIT) {
+                        sync.sendSignal();
+                        stopCounting();
+                    }
+                } catch (InvocationTargetException | InterruptedException ex) {
+                    /*
+                     * This is just a stack trace print, in a real program there
+                     * should be some logging and decent error reporting
+                     */
+                    ex.printStackTrace();
+                }
+            }
+        }
+
+        /**
+         * External command to stop counting.
+         */
+        public void stopCounting() {
+            this.stop = true;
+        }
+
+        public void reverseCounting(boolean isAscending) {
+            this.ascending = isAscending;
+        }
+    }
+
+    private class StopAgent implements Runnable {
+
+        private Synchronizer sync;
+
+        public StopAgent(Synchronizer sync) {
+            this.sync = sync;
+        }
+
+        @Override
+        public void run() {
+            try {
+                sync.waitForSignal();
+            } catch (InterruptedException e) {
+
+            }
+            stop.setEnabled(false);
+            up.setEnabled(false);
+            down.setEnabled(false);
+        }
+    }
+
+    private class Synchronizer {
+        
+        private boolean signal;
+
+        public Synchronizer() {
+            this.signal = false;
+        }
+
+        public synchronized void waitForSignal() throws InterruptedException {
+            while(!signal) {
+                this.wait();
+            }
+            signal = false;
+        }
+
+        public synchronized void sendSignal() {
+            signal = true;
+            notifyAll();
+        }
+    }
 }

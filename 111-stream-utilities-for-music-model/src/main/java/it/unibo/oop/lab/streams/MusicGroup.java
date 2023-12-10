@@ -73,4 +73,5 @@ public interface MusicGroup {
      * @return the longest album
      */
     Optional<String> longestAlbum();
+
 }
